@@ -10,6 +10,8 @@ import logging
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from urllib.parse import urlparse
+from dotenv import load_dotenv
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -28,7 +30,7 @@ TWILIO_SID = os.getenv("TWILIO_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")
 WHATSAPP_NUMBER = os.getenv("WHATSAPP_NUMBER", "+14155238886")
-
+DATABASE_URL = os.getenv('DATABASE_URL')
 # Initialize Twilio client
 try:
     client = Client(TWILIO_SID, TWILIO_AUTH_TOKEN)
