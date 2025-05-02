@@ -1,0 +1,7 @@
+app.log
+ngrok.exe
+test.txt
+*.log
+*.db
+pycache/
+temp_image.jpg
