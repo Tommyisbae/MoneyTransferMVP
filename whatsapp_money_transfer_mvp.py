@@ -11,8 +11,11 @@ from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from urllib.parse import urlparse
 from dotenv import load_dotenv
+
+# Load environment variables
 load_dotenv()
 
+# Initialize Flask app
 app = Flask(__name__)
 
 # Set up logging to file and console
@@ -31,6 +34,7 @@ TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")
 WHATSAPP_NUMBER = os.getenv("WHATSAPP_NUMBER", "+14155238886")
 DATABASE_URL = os.getenv('DATABASE_URL')
+
 # Initialize Twilio client
 try:
     client = Client(TWILIO_SID, TWILIO_AUTH_TOKEN)
@@ -38,20 +42,33 @@ try:
 except Exception as e:
     logging.error(f"Failed to initialize Twilio client: {str(e)}")
 
-# Nigerian banks list
-NIGERIAN_BANKS = ["Zenith Bank", "GTBank", "Access Bank", "First Bank", "UBA"]
-
-# Cache bank codes
-BANK_CODES = {
-    "Zenith Bank": "057",
-    "GTBank": "058",
-    "Access Bank": "044",
-    "First Bank": "011",
-    "UBA": "033"
-}
+# Cache for bank list and codes
+BANK_LIST = []
+BANK_CODES = {}
 
 # Cache for Paystack account verification
 ACCOUNT_CACHE = {}
+
+# Fetch banks from Paystack
+def fetch_banks():
+    global BANK_LIST, BANK_CODES
+    if not BANK_LIST:
+        url = "https://api.paystack.co/bank?country=nigeria&pay_with_bank=true"
+        headers = {"Authorization": f"Bearer {PAYSTACK_SECRET_KEY}"}
+        try:
+            logging.info("Fetching banks from Paystack")
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            if data['status']:
+                BANK_LIST = data['data']
+                BANK_CODES = {bank['name']: bank['code'] for bank in BANK_LIST}
+                logging.info("Fetched %d banks", len(BANK_LIST))
+            else:
+                logging.error("Failed to fetch banks: %s", data['message'])
+        except Exception as e:
+            logging.error("Error fetching banks: %s", str(e))
+    return BANK_LIST
 
 # Initialize PostgreSQL database
 def init_db():
@@ -101,14 +118,17 @@ def extract_account_details(image_path):
         account_number = re.search(account_number_pattern, text)
         
         bank_name = None
-        for bank in NIGERIAN_BANKS:
-            if bank.lower().replace(" bank", "") in text.lower():
-                bank_name = bank
+        banks = fetch_banks()
+        for bank in banks:
+            bank_short_name = bank['name'].lower().replace(" bank", "").replace(" nigeria", "").strip()
+            if bank_short_name in text.lower():
+                bank_name = bank['name']
                 break
         
         if not account_number or not bank_name:
             logging.warning(f"Could not extract account number or bank name. Text: {text}")
-            return None, "Sorry, I couldn't read the account number or bank name. Please send a clearer, typed or printed image."
+            bank_examples = ", ".join([bank['name'] for bank in banks[:3]]) + "..."
+            return None, f"Sorry, I couldn't read the account number or bank name. Please send a clearer, typed or printed image with a supported bank (e.g., {bank_examples})."
         
         return {
             "account_number": account_number.group(),
@@ -128,7 +148,9 @@ def verify_account(account_number, bank_name):
         bank_code = BANK_CODES.get(bank_name)
         if not bank_code:
             logging.warning(f"Bank not supported: {bank_name}")
-            return None, "Bank not supported yet."
+            banks = fetch_banks()
+            bank_examples = ", ".join([bank['name'] for bank in banks[:3]]) + "..."
+            return None, f"Bank not supported. Supported banks include: {bank_examples}."
         
         url = "https://api.paystack.co/bank/resolve"
         headers = {"Authorization": f"Bearer {PAYSTACK_SECRET_KEY}"}
@@ -286,4 +308,5 @@ def whatsapp_webhook():
 
 if __name__ == "__main__":
     init_db()
+    fetch_banks()  # Preload banks
     app.run(debug=True)
