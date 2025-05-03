@@ -19,7 +19,7 @@ load_dotenv()
 app = Flask(__name__)
 
 # Set up logging to file and console
-log_file = os.path.join(os.getcwd(), 'app_20250504.log')
+log_file = '/tmp/app_20250504.log' if os.getenv('RENDER') else os.path.join(os.getcwd(), 'app_20250504.log')
 try:
     file_handler = logging.FileHandler(log_file)
     file_handler.setLevel(logging.DEBUG)
@@ -65,9 +65,12 @@ def fetch_banks():
     if not BANK_LIST:
         url = "https://api.paystack.co/bank?country=nigeria&pay_with_bank=true"
         headers = {"Authorization": f"Bearer {PAYSTACK_SECRET_KEY}"}
+        session = requests.Session()
+        retries = Retry(total=3, backoff_factor=1, status_forcelist=[502, 503, 504])
+        session.mount('https://', HTTPAdapter(max_retries=retries))
         try:
             logging.info("Fetching banks from Paystack")
-            response = requests.get(url, headers=headers, timeout=10)
+            response = session.get(url, headers=headers, timeout=15)
             response.raise_for_status()
             data = response.json()
             if data['status']:
@@ -124,7 +127,7 @@ def extract_account_details(image_path):
         logging.info("Opening image")
         image = Image.open(image_path)
         logging.info("Image opened successfully")
-        text = pytesseract.image_to_string(image, config='--psm 6')
+        text = pytesseract.image_to_string(image, config='--oem 3 --psm 6')
         logging.info(f"OCR extracted text: {text}")
         
         account_number_pattern = r'\b\d{10}\b'
@@ -144,7 +147,7 @@ def extract_account_details(image_path):
         
         if not account_number or not bank_name:
             logging.warning(f"Could not extract account number or bank name. Text: {text}")
-            bank_examples = ", ".join([bank['name'] for bank in banks[:3]]) + "..."
+            bank_examples = ", ".join([bank['name'] for bank in banks[:3]]) + "..." if banks else "unknown banks"
             return None, f"Sorry, I couldn't read the account number or bank name. Please send a clearer, typed or printed image with a supported bank (e.g., {bank_examples})."
         
         logging.info("Extracted details: account_number=%s, bank_name=%s", account_number.group(), bank_name)
@@ -167,7 +170,7 @@ def verify_account(account_number, bank_name):
         if not bank_code:
             logging.warning(f"Bank not supported: {bank_name}")
             banks = fetch_banks()
-            bank_examples = ", ".join([bank['name'] for bank in banks[:3]]) + "..."
+            bank_examples = ", ".join([bank['name'] for bank in banks[:3]]) + "..." if banks else "unknown banks"
             return None, f"Bank not supported. Supported banks include: {bank_examples}."
         
         url = "https://api.paystack.co/bank/resolve"
