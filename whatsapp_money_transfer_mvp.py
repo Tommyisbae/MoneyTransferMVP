@@ -19,14 +19,24 @@ load_dotenv()
 app = Flask(__name__)
 
 # Set up logging to file and console
+log_file = os.path.join(os.getcwd(), 'app_20250504.log')
+try:
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+except Exception as e:
+    print(f"Failed to initialize file handler: {str(e)}")
+    file_handler = logging.NullHandler()
+
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('app.log'),
+        file_handler,
         logging.StreamHandler()
     ]
 )
+logging.info("Logging initialized")
 
 # Configuration (using environment variables)
 TWILIO_SID = os.getenv("TWILIO_SID")
@@ -64,6 +74,7 @@ def fetch_banks():
                 BANK_LIST = data['data']
                 BANK_CODES = {bank['name']: bank['code'] for bank in BANK_LIST}
                 logging.info("Fetched %d banks", len(BANK_LIST))
+                logging.debug("Bank names: %s", [bank['name'] for bank in BANK_LIST])
             else:
                 logging.error("Failed to fetch banks: %s", data['message'])
         except Exception as e:
@@ -100,8 +111,9 @@ def init_db():
 
 # Extract account details from image
 def extract_account_details(image_path):
+    logging.info("Starting extract_account_details for %s", image_path)
     try:
-        logging.info(f"Attempting to open image: {image_path}")
+        logging.info(f"Checking if image exists: {image_path}")
         if not os.path.exists(image_path):
             logging.error(f"Image file does not exist: {image_path}")
             return None, "Image file not found on disk."
@@ -109,6 +121,7 @@ def extract_account_details(image_path):
             logging.error(f"Image file is empty: {image_path}")
             return None, "Image file is empty."
         
+        logging.info("Opening image")
         image = Image.open(image_path)
         logging.info("Image opened successfully")
         text = pytesseract.image_to_string(image, config='--psm 6')
@@ -118,11 +131,15 @@ def extract_account_details(image_path):
         account_number = re.search(account_number_pattern, text)
         
         bank_name = None
+        logging.info("Fetching banks for matching")
         banks = fetch_banks()
+        text_lower = text.lower()
         for bank in banks:
-            bank_short_name = bank['name'].lower().replace(" bank", "").replace(" nigeria", "").strip()
-            if bank_short_name in text.lower():
+            bank_clean = bank['name'].lower().replace(" bank", "").replace(" nigeria", "").replace(" digital services limited", "").replace(" (opay)", "").strip()
+            logging.debug("Checking bank: %s (cleaned: %s)", bank['name'], bank_clean)
+            if bank_clean in text_lower or bank['name'].lower() in text_lower:
                 bank_name = bank['name']
+                logging.info("Matched bank: %s", bank_name)
                 break
         
         if not account_number or not bank_name:
@@ -130,6 +147,7 @@ def extract_account_details(image_path):
             bank_examples = ", ".join([bank['name'] for bank in banks[:3]]) + "..."
             return None, f"Sorry, I couldn't read the account number or bank name. Please send a clearer, typed or printed image with a supported bank (e.g., {bank_examples})."
         
+        logging.info("Extracted details: account_number=%s, bank_name=%s", account_number.group(), bank_name)
         return {
             "account_number": account_number.group(),
             "bank_name": bank_name
