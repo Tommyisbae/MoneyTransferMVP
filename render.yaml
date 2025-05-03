@@ -1,9 +1,7 @@
 services:
      - type: web
        name: money-transfer-mvp
-       env: python
+       env: docker
        plan: free
-       buildCommand: |
-         apt-get update && apt-get install -y tesseract-ocr libtesseract-dev
-         pip install -r requirements.txt
+       dockerfilePath: ./Dockerfile
        startCommand: gunicorn whatsapp_money_transfer_mvp:app
