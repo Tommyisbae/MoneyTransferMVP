@@ -63,7 +63,7 @@ ACCOUNT_CACHE = {}
 def fetch_banks():
     global BANK_LIST, BANK_CODES
     if not BANK_LIST:
-        url = "https://api.paystack.co/bank?country=nigeria&pay_with_bank=true"
+        url = "https://api.paystack.co/bank?country=nigeria"
         headers = {"Authorization": f"Bearer {PAYSTACK_SECRET_KEY}"}
         session = requests.Session()
         retries = Retry(total=3, backoff_factor=1, status_forcelist=[502, 503, 504])
